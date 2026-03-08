@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:pont_arkipel/services/excel.dart';
 import 'services/arkipel.dart';
+import 'services/excel.dart';
 
 void main() {
   runApp(const MyApp());
@@ -55,15 +57,27 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  String _message = 'No message yet';
 
+  String _message = 'No message yet';
   void _ping() {
     setState(() {
       _message = 'Sent ping...';
-      Arkipel.ping();
-      _message = Arkipel.arkipelResponse;
+      ArkipelService.ping();
+      _message = ArkipelService.arkipelResponse;
     });
   }
+
+  Future<void> _pickFile() async {
+  bool success = await ExcelService.pickExcel();
+
+  setState(() {
+    if (success) {
+      _message = 'File picked successfully!';
+    } else {
+      _message = 'Failed to pick file.';
+    }
+  });
+}
 
   @override
   Widget build(BuildContext context) {
@@ -127,6 +141,11 @@ class _MyHomePageState extends State<MyHomePage> {
             tooltip: 'Clear message',
             child: const Text('Clear'),
           ),
+          FloatingActionButton(
+            onPressed: _pickFile,
+            tooltip: 'Pick file',
+            child: const Text('Pick file'),
+          )
         ],
       ),
     );

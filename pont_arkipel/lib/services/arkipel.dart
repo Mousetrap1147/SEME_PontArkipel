@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 
-class Arkipel {
+class ArkipelService {
   static final Uri endpoint = Uri.parse(
     "https://staging.gotoucan.app/arkipel/ymhs9rzyfic33s85cy3hizof4sieah3rc3x9spbqhczkzsizzw1i/streams",
   );
