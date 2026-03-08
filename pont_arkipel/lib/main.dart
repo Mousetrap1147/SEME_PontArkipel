@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Pont Arkipel',
       theme: ThemeData(
         // This is the theme of your application.
         //
@@ -31,7 +31,7 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: .fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Pont Arkipel'),
     );
   }
 }
@@ -55,24 +55,11 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
   String _message = 'No message yet';
 
-  void _setMessage() {
+  void _ping() {
     setState(() {
-      _message = 'Updating...';
+      _message = 'Sent ping...';
       Arkipel.ping();
       _message = Arkipel.arkipelResponse;
     });
@@ -114,22 +101,33 @@ class _MyHomePageState extends State<MyHomePage> {
           // action in the IDE, or press "p" in the console), to see the
           // wireframe for each widget.
           mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
+          children: <Widget>[
             Text(
-              '$_counter',
+              _message,
               style: Theme.of(context).textTheme.headlineMedium,
             ),
-            Spacer(flex: 1),
-            ElevatedButton(onPressed: _setMessage, child: const Icon(Icons.add)),
-            Text('$_message'),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          FloatingActionButton(
+            onPressed: _ping,
+            tooltip: 'Ping',
+            child: const Text('Ping'),
+          ),
+          const SizedBox(width: 8),
+          FloatingActionButton(
+            onPressed: () {
+              setState(() {
+                _message = 'No message yet';
+              });
+            },
+            tooltip: 'Clear message',
+            child: const Text('Clear'),
+          ),
+        ],
       ),
     );
   }
