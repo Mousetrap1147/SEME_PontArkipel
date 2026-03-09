@@ -1,6 +1,7 @@
 {
     "conventionalCommits.scopes": [
         "Arkipel",
-        "UI"
+        "UI",
+        "Excel"
     ]
 }
