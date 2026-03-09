@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:pont_arkipel/services/excel.dart';
+import 'package:pont_arkipel/services/spreadsheet.dart';
 import 'services/arkipel.dart';
-import 'services/excel.dart';
+import 'services/spreadsheet.dart';
 
 void main() {
   runApp(const MyApp());
@@ -57,7 +57,6 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-
   String _message = 'No message yet';
   void _ping() {
     setState(() {
@@ -67,17 +66,38 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  Future<void> _pickFile() async {
-  bool success = await ExcelService.pickExcel();
+  Future<void> _pickFileClients() async {
+    bool success = await SpreadsheetService.pickFileClients();
+    setState(() {
+      if (success) {
+        _message = 'File "Clients" picked successfully!';
+      } else {
+        _message = 'Failed to pick "Clients" file.';
+      }
+    });
+  }
 
-  setState(() {
-    if (success) {
-      _message = 'File picked successfully!';
-    } else {
-      _message = 'Failed to pick file.';
-    }
-  });
-}
+  Future<void> _pickFileFamille() async {
+    bool success = await SpreadsheetService.pickFileFamille();
+    setState(() {
+      if (success) {
+        _message = 'File "Famille" picked successfully!';
+      } else {
+        _message = 'Failed to pick "Famille" file.';
+      }
+    });
+  }
+
+  Future<void> _pickFileRDV() async {
+    bool success = await SpreadsheetService.pickFileRDV();
+    setState(() {
+      if (success) {
+        _message = 'File "RDV" picked successfully!';
+      } else {
+        _message = 'Failed to pick "RDV" file.';
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -116,10 +136,7 @@ class _MyHomePageState extends State<MyHomePage> {
           // wireframe for each widget.
           mainAxisAlignment: .center,
           children: <Widget>[
-            Text(
-              _message,
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
+            Text(_message, style: Theme.of(context).textTheme.headlineMedium),
           ],
         ),
       ),
@@ -142,10 +159,20 @@ class _MyHomePageState extends State<MyHomePage> {
             child: const Text('Clear'),
           ),
           FloatingActionButton(
-            onPressed: _pickFile,
-            tooltip: 'Pick file',
-            child: const Text('Pick file'),
-          )
+            onPressed: _pickFileClients,
+            tooltip: 'Pick file "Clients"',
+            child: const Text('Pick file "Clients"'),
+          ),
+          FloatingActionButton(
+            onPressed: _pickFileFamille,
+            tooltip: 'Pick file "Famille"',
+            child: const Text('Pick file "Famille"'),
+          ),
+          FloatingActionButton(
+            onPressed: _pickFileRDV,
+            tooltip: 'Pick file "RDV"',
+            child: const Text('Pick file "RDV"'),
+          ),
         ],
       ),
     );
