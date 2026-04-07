@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pont_arkipel/services/spreadsheet.dart';
 import 'services/arkipel.dart';
-import 'services/spreadsheet.dart';
+import 'model/rdv.dart';
 
 void main() {
   runApp(const MyApp());
@@ -67,36 +67,74 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _pickFileClients() async {
-    bool success = await SpreadsheetService.pickFileClients();
+    await SpreadsheetService.pickFile(FileTypeExcel.clients);
+
     setState(() {
-      if (success) {
-        _message = 'File "Clients" picked successfully!';
-      } else {
-        _message = 'Failed to pick "Clients" file.';
-      }
+      _message = 'File "Clients" picked successfully!';
     });
   }
 
   Future<void> _pickFileFamille() async {
-    bool success = await SpreadsheetService.pickFileFamille();
+    await SpreadsheetService.pickFile(FileTypeExcel.famille);
+
     setState(() {
-      if (success) {
-        _message = 'File "Famille" picked successfully!';
-      } else {
-        _message = 'Failed to pick "Famille" file.';
-      }
+      _message = 'File "Famille" picked successfully!';
     });
   }
 
   Future<void> _pickFileRDV() async {
-    bool success = await SpreadsheetService.pickFileRDV();
+    await SpreadsheetService.pickFile(FileTypeExcel.rdv);
+
     setState(() {
-      if (success) {
-        _message = 'File "RDV" picked successfully!';
-      } else {
-        _message = 'Failed to pick "RDV" file.';
-      }
+      _message = 'File "RDV" picked successfully!';
     });
+  }
+
+  final Map<int, List<RDV>> clientRdvs = {};
+
+  Future<void> _readRDV() async {
+    setState(() {
+      _message = 'Reading...';
+    });
+
+    const validServices = {
+      "Régulier",
+      "Trait d'union",
+      "Livraison",
+      "Dépannage d'urgence",
+    };
+
+    await for (final row in SpreadsheetService.read(FileTypeExcel.rdv)) {
+      final statut = row["Statut"];
+      final service = row["Service"];
+      final clientRaw = row["N° de client"];
+
+      final clientId = parseClientId(clientRaw);
+      if (clientId == null) continue;
+
+      if ((statut != null && statut != "Absent") &&
+          validServices.contains(service)) {
+        final rdv = RDV.fromMap(row);
+
+        clientRdvs.putIfAbsent(clientId, () => []).add(rdv);
+      }
+    }
+
+    setState(() {
+      _message = 'Done';
+    });
+  }
+
+  int? parseClientId(dynamic value) {
+    if (value == null) return null;
+
+    if (value is int) return value;
+
+    if (value is String) {
+      return int.tryParse(value);
+    }
+
+    return null;
   }
 
   @override
@@ -172,6 +210,11 @@ class _MyHomePageState extends State<MyHomePage> {
             onPressed: _pickFileRDV,
             tooltip: 'Pick file "RDV"',
             child: const Text('Pick file "RDV"'),
+          ),
+          FloatingActionButton(
+            onPressed: _readRDV,
+            tooltip: 'Read',
+            child: const Text('Read'),
           ),
         ],
       ),

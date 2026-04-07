@@ -2,70 +2,55 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:spreadsheet_decoder/spreadsheet_decoder.dart';
 
+enum FileTypeExcel { clients, famille, rdv }
+
 class SpreadsheetService {
-  static Future<bool> pickFileClients() async {
+  static final Map<FileTypeExcel, SpreadsheetDecoder> _decoders = {};
+
+  static Future<void> pickFile(FileTypeExcel type) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx', 'xlsm'],
     );
 
-    if (result == null) return false;
+    if (result == null) return;
 
     final file = File(result.files.single.path!);
-    final bytes = file.readAsBytesSync();
+
+    final bytes = await file.readAsBytes();
 
     final decoder = SpreadsheetDecoder.decodeBytes(bytes);
 
-    //reading
-    for (var table in decoder.tables.keys) {
-      print("Sheet: $table");
-      print("Rows: ${decoder.tables[table]?.rows.length}");
-    }
+    _decoders[type] = decoder;
 
-    return true;
+    print("${type.name} file loaded");
   }
 
-  static Future<bool> pickFileFamille() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx', 'xlsm'],
-    );
+  static Stream<Map<String, dynamic>> read(FileTypeExcel type) async* {
+    final decoder = _decoders[type];
 
-    if (result == null) return false;
-
-    final file = File(result.files.single.path!);
-    final bytes = file.readAsBytesSync();
-
-    final decoder = SpreadsheetDecoder.decodeBytes(bytes);
-
-    //reading
-    for (var table in decoder.tables.keys) {
-      print("Sheet: $table");
-      print("Rows: ${decoder.tables[table]?.rows.length}");
+    if (decoder == null) {
+      throw Exception("${type.name} file not loaded");
     }
 
-    return true;
-  }
-
-  static Future<bool> pickFileRDV() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx', 'xlsm'],
-    );
-
-    if (result == null) return false;
-
-    final file = File(result.files.single.path!);
-    final bytes = file.readAsBytesSync();
-
-    final decoder = SpreadsheetDecoder.decodeBytes(bytes);
-
-    //reading
     for (var table in decoder.tables.keys) {
-      print("Sheet: $table");
-      print("Rows: ${decoder.tables[table]?.rows.length}");
-    }
+      final rows = decoder.tables[table]!.rows;
 
-    return true;
+      if (rows.isEmpty) continue;
+
+      final headers = rows.first.map((e) => e.toString()).toList();
+
+      for (int i = 1; i < rows.length; i++) {
+        final row = rows[i];
+
+        final Map<String, dynamic> rowMap = {};
+
+        for (int j = 0; j < headers.length; j++) {
+          rowMap[headers[j]] = j < row.length ? row[j] : null;
+        }
+
+        yield rowMap;
+      }
+    }
   }
 }
