@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:pont_arkipel/services/spreadsheet.dart';
 import 'services/arkipel.dart';
 import 'model/rdv.dart';
+import 'model/person.dart';
+import 'model/household.dart';
 
 void main() {
   runApp(const MyApp());
@@ -90,11 +92,50 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  final Map<int, List<RDV>> clientRdvs = {};
+  final Map<int, Household> clients = {};
+  final Map<int, List<RDV>> rdvs = {};
 
-  Future<void> _readRDV() async {
+  Future<void> _read() async {
+    clients.clear();
+    rdvs.clear();
+
+    ///////////////////////
+    // Clients
+
     setState(() {
-      _message = 'Reading...';
+      _message = 'Lecture de clients...';
+    });
+
+    await for (final row in SpreadsheetService.read(FileTypeExcel.clients)) {
+      final clientId = parseClientId(row["N° de client"]);
+      if (clientId == null) continue;
+
+      final household = Household.fromMap(row);
+
+      household.persons.add(
+        Person.fromMap(
+          row,
+          householdId: clientId,
+          memberIndex: 0,
+        ),
+      );
+
+      clients.putIfAbsent(clientId, () => household);
+    }
+
+    // for (final household in clients.values.take(2)) {
+    //   print('Client number: ${household.id}, Source revenu: ${household.sourceRevenu}');
+    // }
+
+    setState(() {
+      _message = 'Terminé de lire clients';
+    });
+
+    ///////////////////////
+    // RDV
+
+    setState(() {
+      _message = 'Lecture de RDV...';
     });
 
     const validServices = {
@@ -107,24 +148,101 @@ class _MyHomePageState extends State<MyHomePage> {
     await for (final row in SpreadsheetService.read(FileTypeExcel.rdv)) {
       final statut = row["Statut"];
       final service = row["Service"];
-      final clientRaw = row["N° de client"];
-
-      final clientId = parseClientId(clientRaw);
+      final clientId = row["N° de client"];
       if (clientId == null) continue;
-
       if ((statut != null && statut != "Absent") &&
           validServices.contains(service)) {
-        final rdv = RDV.fromMap(row);
-
-        clientRdvs.putIfAbsent(clientId, () => []).add(rdv);
+        final clientIdInt = int.tryParse(clientId);
+        if (clientIdInt != null) {
+          if (!clients.containsKey(clientIdInt)) {
+            print('Client introuvable : $clientIdInt}');
+            continue;
+          }
+          rdvs.putIfAbsent(clientIdInt, () => []).add(RDV.fromMap(row));
+        }
       }
     }
 
     setState(() {
-      _message = 'Done';
+      _message = 'Terminé de lire RDV';
     });
+
+    // // Print RDV
+    // for (final entry in rdvs.entries) {
+    //   final clientId = entry.key;
+    //   final household = clients[clientId];
+    //   final label = household != null
+    //       ? 'Household ${household.id}'
+    //       : 'Client inconnu ($clientId)';
+
+    //   print('┌─ $label — ${entry.value.length} RDV');
+    //   for (final rdv in entry.value) {
+    //     final serial = int.tryParse(rdv.date.toString());
+    //     final date = serial != null
+    //         ? DateTime(1899, 12, 30).add(Duration(days: serial))
+    //         : null;
+    //     final dateStr = date != null
+    //         ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
+    //         : rdv.date.toString();
+
+    //     print('│   • $dateStr  ${rdv.service}');
+    //   }
+    //   print('└─────────────────────────────────');
+    // }
+
+    ///////////////////////
+    // Famille
+
+    setState(() {
+      _message = 'Lecture de famille...';
+    });
+
+    await for (final row in SpreadsheetService.read(FileTypeExcel.famille)) {
+      final clientId = parseClientId(row["N° de client"]);
+      if (clientId == null) continue;
+      if (!rdvs.containsKey(clientId)) continue;
+
+      final household = clients[clientId];
+      if (household == null) continue;
+
+      household.persons.add(
+        Person.fromMap(
+          row,
+          householdId: clientId,
+          memberIndex: household.persons.length,
+        ),
+      );
+    }
+
+    setState(() {
+      _message = 'Terminé de lire famille';
+    });
+
+    // Print all families
+    for (final clientId in rdvs.keys) {
+      final household = clients[clientId];
+      if (household == null) continue;
+
+      print(
+        '┌─ Household ${household.id} — ${household.persons.length} personnes',
+      );
+      for (final person in household.persons) {
+        final dobStr = person.dateOfBirth != null
+            ? '${person.dateOfBirth!.year}-${person.dateOfBirth!.month.toString().padLeft(2, '0')}-${person.dateOfBirth!.day.toString().padLeft(2, '0')}'
+            : 'DoB inconnue';
+        print('│   • ${person.id}  $dobStr');
+      }
+      print('└─────────────────────────────────');
+    }
   }
 
+  Future<void> _send() async {
+    await ArkipelService.sendDistributions(rdvs, clients, limit: 4);
+    setState(() {
+      _message = ArkipelService.arkipelResponse;
+    });
+  }
+  
   int? parseClientId(dynamic value) {
     if (value == null) return null;
 
@@ -197,6 +315,11 @@ class _MyHomePageState extends State<MyHomePage> {
             child: const Text('Clear'),
           ),
           FloatingActionButton(
+            onPressed: _pickFileRDV,
+            tooltip: 'Pick file "RDV"',
+            child: const Text('Pick file "RDV"'),
+          ),
+          FloatingActionButton(
             onPressed: _pickFileClients,
             tooltip: 'Pick file "Clients"',
             child: const Text('Pick file "Clients"'),
@@ -207,14 +330,14 @@ class _MyHomePageState extends State<MyHomePage> {
             child: const Text('Pick file "Famille"'),
           ),
           FloatingActionButton(
-            onPressed: _pickFileRDV,
-            tooltip: 'Pick file "RDV"',
-            child: const Text('Pick file "RDV"'),
-          ),
-          FloatingActionButton(
-            onPressed: _readRDV,
+            onPressed: _read,
             tooltip: 'Read',
             child: const Text('Read'),
+          ),
+          FloatingActionButton(
+            onPressed: _send,
+            tooltip: 'Send',
+            child: const Text('Send'),
           ),
         ],
       ),
