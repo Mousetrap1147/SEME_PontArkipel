@@ -240,7 +240,11 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _send() async {
-    await ArkipelService.sendDistributions(rdvs, clients, limit: 1);
+    await ArkipelService.sendDistributions(
+      rdvs, 
+      clients, 
+      // limit: 1
+      );
     setState(() {
       _message = ArkipelService.arkipelResponse;
     });

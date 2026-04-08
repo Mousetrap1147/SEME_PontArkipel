@@ -6,7 +6,7 @@ import 'package:pont_arkipel/model/rdv.dart';
 
 class ArkipelService {
   static final Uri endpoint = Uri.parse(
-    "https://staging.gotoucan.app/arkipel/ymhs9rzyfic33s85cy3hizof4sieah3rc3x9spbqhczkzsizzw1i/streams",
+    "https://gotoucan.app/arkipel/b3y674i4k159y7hs6px6ju8idat1rggdn1ssb5nzc4h6krthrrah/streams",
   );
 
   static String arkipelResponse = "No data yet";
@@ -14,8 +14,11 @@ class ArkipelService {
   static Future<void> ping() async {
     print("Sending request...");
 
-    String tokenPath = r"C:\Users\maxim\Desktop\ArkipelToken.txt";
-    String token = await File(tokenPath).readAsString();
+    final token = await _readToken();
+    print(
+      "Token: '${token.substring(0, 10)}...'",
+    ); // verify token starts correctly
+    print("Endpoint: $endpoint"); // verify URL
 
     var payload = {
       "payload": {"type": "ping"},
@@ -33,6 +36,7 @@ class ArkipelService {
       );
 
       print("Status: ${response.statusCode}");
+      print("Body: ${response.body.substring(0, 100)}");
 
       var decoded = jsonDecode(response.body);
       var pretty = const JsonEncoder.withIndent('  ').convert(decoded);
@@ -63,10 +67,14 @@ class ArkipelService {
 
     final entries = limit != null ? rdvs.entries.take(limit) : rdvs.entries;
 
+    int sent = 0;
+
     for (final entry in entries) {
       final clientId = entry.key;
       final household = clients[clientId];
       if (household == null) continue;
+
+      print('Sending client $clientId with ${entry.value.length} RDVs'); // 👈
 
       print('Client number: ${household.id}');
 
@@ -96,6 +104,7 @@ class ArkipelService {
                     "type": "people:upsert",
                     "first_name": person.id,
                     "import_id": person.id,
+                    "category_id": 127,
                     "dob": person.dateOfBirth != null
                         ? '${person.dateOfBirth!.year}-${person.dateOfBirth!.month.toString().padLeft(2, '0')}-${person.dateOfBirth!.day.toString().padLeft(2, '0')}'
                         : null,
@@ -117,6 +126,7 @@ class ArkipelService {
 
           final decoded = jsonDecode(response.body);
           final messageId = decoded['payload']['message_id'];
+          sent++;
           print(
             'Distribution envoyée — message_id: $messageId ($procuredOn ${rdv.service} → client $clientId)',
           );
@@ -128,12 +138,14 @@ class ArkipelService {
         await Future.delayed(const Duration(milliseconds: 650));
       }
     }
+
+    print('✅ $sent distributions envoyées');
   }
 
   static Future<String> _readToken() async {
-    return await File(
+    return (await File(
       r"C:\Users\maxim\Desktop\ArkipelToken.txt",
-    ).readAsString();
+    ).readAsString()).trim();
   }
 
   static Future<void> deleteAllTestData(
