@@ -113,11 +113,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final household = Household.fromMap(row);
 
       household.persons.add(
-        Person.fromMap(
-          row,
-          householdId: clientId,
-          memberIndex: 0,
-        ),
+        Person.fromMap(row, householdId: clientId, memberIndex: 0),
       );
 
       clients.putIfAbsent(clientId, () => household);
@@ -137,6 +133,8 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _message = 'Lecture de RDV...';
     });
+
+    int rdvCount = 0;
 
     const validServices = {
       "Régulier",
@@ -159,6 +157,7 @@ class _MyHomePageState extends State<MyHomePage> {
             continue;
           }
           rdvs.putIfAbsent(clientIdInt, () => []).add(RDV.fromMap(row));
+          rdvCount++;
         }
       }
     }
@@ -218,31 +217,42 @@ class _MyHomePageState extends State<MyHomePage> {
       _message = 'Terminé de lire famille';
     });
 
-    // Print all families
-    for (final clientId in rdvs.keys) {
-      final household = clients[clientId];
-      if (household == null) continue;
+    // // Print all families
+    // for (final clientId in rdvs.keys) {
+    //   final household = clients[clientId];
+    //   if (household == null) continue;
 
-      print(
-        '┌─ Household ${household.id} — ${household.persons.length} personnes',
-      );
-      for (final person in household.persons) {
-        final dobStr = person.dateOfBirth != null
-            ? '${person.dateOfBirth!.year}-${person.dateOfBirth!.month.toString().padLeft(2, '0')}-${person.dateOfBirth!.day.toString().padLeft(2, '0')}'
-            : 'DoB inconnue';
-        print('│   • ${person.id}  $dobStr');
-      }
-      print('└─────────────────────────────────');
-    }
+    //   print(
+    //     '┌─ Household ${household.id} — ${household.persons.length} personnes',
+    //   );
+    //   for (final person in household.persons) {
+    //     final dobStr = person.dateOfBirth != null
+    //         ? '${person.dateOfBirth!.year}-${person.dateOfBirth!.month.toString().padLeft(2, '0')}-${person.dateOfBirth!.day.toString().padLeft(2, '0')}'
+    //         : 'DoB inconnue';
+    //     print('│   • ${person.id}  $dobStr');
+    //   }
+    //   print('└─────────────────────────────────');
+    // }
+
+    setState(() {
+      _message = 'Terminé : ($rdvCount)';
+    });
   }
 
   Future<void> _send() async {
-    await ArkipelService.sendDistributions(rdvs, clients, limit: 4);
+    await ArkipelService.sendDistributions(rdvs, clients, limit: 1);
     setState(() {
       _message = ArkipelService.arkipelResponse;
     });
   }
-  
+
+  Future<void> _delete() async {
+    await ArkipelService.deleteAllTestData(clients, rdvs);
+    setState(() {
+      _message = 'Suppression terminée';
+    });
+  }
+
   int? parseClientId(dynamic value) {
     if (value == null) return null;
 
@@ -338,6 +348,11 @@ class _MyHomePageState extends State<MyHomePage> {
             onPressed: _send,
             tooltip: 'Send',
             child: const Text('Send'),
+          ),
+          FloatingActionButton(
+            onPressed: _delete,
+            tooltip: 'Delete',
+            child: const Text('Delete'),
           ),
         ],
       ),
