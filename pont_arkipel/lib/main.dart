@@ -16,11 +16,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pont Arkipel',
+      title: 'PontArkipel_SEME',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Pont Arkipel'),
+      home: const MyHomePage(title: 'PontArkipel_SEME'),
     );
   }
 }
@@ -170,6 +170,9 @@ class _MyHomePageState extends State<MyHomePage> {
   final Map<int, Household> _clients = {};
   final Map<int, List<RDV>> _rdvs = {};
 
+  DateTime? _deleteFrom;
+  DateTime? _deleteTo;
+
   void _log(String msg) {
     final now = DateTime.now();
     final ts =
@@ -195,46 +198,128 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<void> _pickFiles() async {
-    await showDialog<void>(
+  static const _fileLabels = {
+    FileTypeExcel.clients: 'Clients',
+    FileTypeExcel.famille: 'Famille',
+    FileTypeExcel.rdv: 'RDV',
+  };
+
+  Future<void> _pickFile(FileTypeExcel type) async {
+    await SpreadsheetService.pickFile(type);
+    _log('Fichier "${_fileLabels[type]}" chargé');
+  }
+
+  Widget _fileChip(FileTypeExcel type) {
+    final loaded = SpreadsheetService.isLoaded(type);
+    return ActionChip(
+      avatar: Icon(
+        loaded ? Icons.check_circle : Icons.upload_file,
+        color: loaded ? Colors.green : Colors.grey,
+        size: 18,
+      ),
+      label: Text(_fileLabels[type]!),
+      backgroundColor: loaded ? Colors.green[50] : null,
+      onPressed: () => _pickFile(type),
+    );
+  }
+
+  Future<void> _deleteDistributions() async {
+    DateTime? from = _deleteFrom;
+    DateTime? to = _deleteTo;
+
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sélectionner les fichiers'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.table_chart),
-              title: const Text('Clients'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await SpreadsheetService.pickFile(FileTypeExcel.clients);
-                _log('Fichier "Clients" choisi');
-              },
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Supprimer des distributions'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Choisissez la période selon la date d\'envoi vers GoToucan '
+                '(et non la date de distribution associée dans le système).',
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Maximum 2000 distributions supprimées par opération.',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                title: const Text('Date d\'envoi — du'),
+                subtitle: Text(
+                  from != null ? _formatDate(from!) : 'Non défini',
+                ),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: from ?? DateTime.now(),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) setLocal(() => from = picked);
+                },
+              ),
+              ListTile(
+                title: const Text('Date d\'envoi — au'),
+                subtitle: Text(
+                  to != null ? _formatDate(to!) : 'Non défini',
+                ),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: to ?? DateTime.now(),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) setLocal(() => to = picked);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
             ),
-            ListTile(
-              leading: const Icon(Icons.table_chart),
-              title: const Text('Famille'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await SpreadsheetService.pickFile(FileTypeExcel.famille);
-                _log('Fichier "Famille" choisi');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.table_chart),
-              title: const Text('RDV'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await SpreadsheetService.pickFile(FileTypeExcel.rdv);
-                _log('Fichier "RDV" choisi');
-              },
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: (from != null && to != null)
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
+              child: const Text('Supprimer'),
             ),
           ],
         ),
       ),
     );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _deleteFrom = from;
+      _deleteTo = to;
+    });
+
+    try {
+      await ArkipelService.deleteDistributions(
+        createdAtGteq: _formatDate(_deleteFrom!),
+        createdAtLteq: _formatDate(_deleteTo!),
+        onProgress: _log,
+      );
+    } catch (e) {
+      _log('$e'.replaceFirst('Exception: ', ''));
+    }
   }
+
+  String _formatDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Future<void> _doMagic() async {
     await _read();
@@ -377,17 +462,33 @@ class _MyHomePageState extends State<MyHomePage> {
             const SizedBox(height: 24),
             Row(
               children: [
-                OutlinedButton(
-                  onPressed: _pickFiles,
-                  child: const Text('Choisir les fichiers'),
-                ),
-                const SizedBox(width: 8),
+                _fileChip(FileTypeExcel.clients),
+                const SizedBox(width: 6),
+                _fileChip(FileTypeExcel.famille),
+                const SizedBox(width: 6),
+                _fileChip(FileTypeExcel.rdv),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
                 Tooltip(
                   message: 'Débit : ${ArkipelService.sendRateLabel}',
                   child: OutlinedButton(
-                    onPressed: _doMagic,
+                    onPressed: (_pingOk == true &&
+                            SpreadsheetService.isLoaded(FileTypeExcel.clients) &&
+                            SpreadsheetService.isLoaded(FileTypeExcel.famille) &&
+                            SpreadsheetService.isLoaded(FileTypeExcel.rdv))
+                        ? _doMagic
+                        : null,
                     child: const Text('Envoyer'),
                   ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: _deleteDistributions,
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('Supprimer distributions'),
                 ),
               ],
             ),

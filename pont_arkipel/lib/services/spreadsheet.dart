@@ -7,6 +7,8 @@ enum FileTypeExcel { clients, famille, rdv }
 class SpreadsheetService {
   static final Map<FileTypeExcel, SpreadsheetDecoder> _decoders = {};
 
+  static bool isLoaded(FileTypeExcel type) => _decoders.containsKey(type);
+
   static Future<void> pickFile(FileTypeExcel type) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,

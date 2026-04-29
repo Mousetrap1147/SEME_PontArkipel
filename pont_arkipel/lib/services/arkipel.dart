@@ -159,8 +159,50 @@ class ArkipelService {
     onProgress?.call('Terminé : $sent/$total distributions envoyées');
   }
 
+  static Future<void> deleteDistributions({
+    required String createdAtGteq,
+    required String createdAtLteq,
+    void Function(String)? onProgress,
+  }) async {
+    final token = await _readToken();
+
+    onProgress?.call('Suppression des distributions du $createdAtGteq au $createdAtLteq...');
+
+    final Map<String, dynamic> decoded;
+    try {
+      final response = await http.post(
+        endpoint,
+        headers: {
+          "Authorization": "Bearer $token",
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode({
+          "payload": {
+            "type": "distributions:delete",
+            "q": {
+              "per_page": 2000,
+              "page": 1,
+              "created_at_gteq": createdAtGteq,
+              "created_at_lteq": createdAtLteq,
+            },
+          },
+        }),
+      );
+      decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw Exception('Réponse invalide du serveur');
+    }
+
+    if (decoded.containsKey('error')) {
+      throw Exception(decoded['error'].toString());
+    }
+
+    final messageId = decoded['payload']?['message_id'];
+    onProgress?.call('Suppression effectuée ✓ #$messageId');
+  }
+
   static Future<String> _readToken() async {
-    if (_customToken == null || _customToken!.isEmpty) throw Exception('Aucun token saisi');
+    if (_customToken == null || _customToken!.isEmpty) throw Exception('Aucun jeton saisi');
     return _customToken!;
   }
 
