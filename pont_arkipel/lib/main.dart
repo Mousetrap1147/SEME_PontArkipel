@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pont_arkipel/services/spreadsheet.dart';
 import 'services/arkipel.dart';
+import 'services/saved_entries.dart';
 import 'model/rdv.dart';
 import 'model/person.dart';
 import 'model/household.dart';
@@ -12,28 +13,12 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Pont Arkipel',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       home: const MyHomePage(title: 'Pont Arkipel'),
     );
@@ -42,16 +27,6 @@ class MyApp extends StatelessWidget {
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
   final String title;
 
   @override
@@ -59,90 +34,237 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  String _message = 'No message yet';
-  void _ping() {
-    setState(() {
-      _message = 'Sent ping...';
-      ArkipelService.ping();
-      _message = ArkipelService.arkipelResponse;
-    });
+  final _tokenController = TextEditingController();
+  final _destinationController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    SavedEntriesService.init();
+    _tokenController.addListener(
+      () => ArkipelService.setToken(_tokenController.text),
+    );
+    _destinationController.addListener(
+      () => ArkipelService.setEndpoint(_destinationController.text),
+    );
   }
 
-  Future<void> _pickFileClients() async {
-    await SpreadsheetService.pickFile(FileTypeExcel.clients);
-
-    setState(() {
-      _message = 'File "Clients" picked successfully!';
-    });
+  Future<void> _selectFromList(
+    String type,
+    TextEditingController controller,
+  ) async {
+    final entries = type == 'tokens'
+        ? SavedEntriesService.tokens
+        : SavedEntriesService.destinations;
+    if (entries.isEmpty) {
+      _log('Aucun élément enregistré dans cette liste');
+      return;
+    }
+    final selected = await showDialog<SavedEntry>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sélectionner'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: entries
+              .map(
+                (e) => ListTile(
+                  title: Text(e.name),
+                  subtitle: Text(
+                    e.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.pop(ctx, e),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+    if (selected != null) controller.text = selected.value;
   }
 
-  Future<void> _pickFileFamille() async {
-    await SpreadsheetService.pickFile(FileTypeExcel.famille);
-
-    setState(() {
-      _message = 'File "Famille" picked successfully!';
-    });
+  Future<void> _addToList(
+    String type,
+    TextEditingController controller,
+  ) async {
+    if (controller.text.trim().isEmpty) {
+      _log('Le champ est vide');
+      return;
+    }
+    final nameController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nom de l\'entrée'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Ex: Production'),
+          onSubmitted: (_) => Navigator.pop(ctx, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && nameController.text.trim().isNotEmpty) {
+      await SavedEntriesService.add(
+        type,
+        nameController.text.trim(),
+        controller.text.trim(),
+      );
+      _log('"${nameController.text.trim()}" enregistré');
+    }
   }
 
-  Future<void> _pickFileRDV() async {
-    await SpreadsheetService.pickFile(FileTypeExcel.rdv);
-
-    setState(() {
-      _message = 'File "RDV" picked successfully!';
-    });
+  Future<void> _deleteFromList(String type) async {
+    final entries = type == 'tokens'
+        ? SavedEntriesService.tokens
+        : SavedEntriesService.destinations;
+    if (entries.isEmpty) {
+      _log('Aucun élément enregistré dans cette liste');
+      return;
+    }
+    final toDelete = await showDialog<SavedEntry>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: entries
+              .map(
+                (e) => ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: Text(e.name),
+                  subtitle: Text(
+                    e.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.pop(ctx, e),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+    if (toDelete != null) {
+      await SavedEntriesService.remove(type, toDelete.name);
+      _log('"${toDelete.name}" supprimé de la liste');
+    }
   }
 
-  final Map<int, Household> clients = {};
-  final Map<int, List<RDV>> rdvs = {};
+  bool? _pingOk;
+  DateTime? _lastPingTime;
+  final List<String> _messages = [];
+
+  final Map<int, Household> _clients = {};
+  final Map<int, List<RDV>> _rdvs = {};
+
+  void _log(String msg) {
+    final now = DateTime.now();
+    final ts =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+    setState(() => _messages.insert(0, '[$ts] $msg'));
+  }
+
+  Future<void> _ping() async {
+    _log('Envoi ping...');
+    try {
+      await ArkipelService.ping();
+      setState(() {
+        _pingOk = true;
+        _lastPingTime = DateTime.now();
+      });
+      _log('Ping OK');
+    } catch (e) {
+      setState(() {
+        _pingOk = false;
+        _lastPingTime = DateTime.now();
+      });
+      _log('$e'.replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _pickFiles() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sélectionner les fichiers'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.table_chart),
+              title: const Text('Clients'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await SpreadsheetService.pickFile(FileTypeExcel.clients);
+                _log('Fichier "Clients" choisi');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_chart),
+              title: const Text('Famille'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await SpreadsheetService.pickFile(FileTypeExcel.famille);
+                _log('Fichier "Famille" choisi');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_chart),
+              title: const Text('RDV'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await SpreadsheetService.pickFile(FileTypeExcel.rdv);
+                _log('Fichier "RDV" choisi');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _doMagic() async {
+    await _read();
+    await _send();
+  }
 
   Future<void> _read() async {
-    clients.clear();
-    rdvs.clear();
+    _clients.clear();
+    _rdvs.clear();
 
-    ///////////////////////
-    // Clients
-
-    setState(() {
-      _message = 'Lecture de clients...';
-    });
-
+    _log('Lecture de clients...');
     await for (final row in SpreadsheetService.read(FileTypeExcel.clients)) {
-      final clientId = parseClientId(row["N° de client"]);
+      final clientId = _parseClientId(row["N° de client"]);
       if (clientId == null) continue;
-
       final household = Household.fromMap(row);
-
       household.persons.add(
         Person.fromMap(row, householdId: clientId, memberIndex: 0),
       );
-
-      clients.putIfAbsent(clientId, () => household);
+      _clients.putIfAbsent(clientId, () => household);
     }
+    _log('Clients lus: ${_clients.length}');
 
-    // for (final household in clients.values.take(2)) {
-    //   print('Client number: ${household.id}, Source revenu: ${household.sourceRevenu}');
-    // }
-
-    setState(() {
-      _message = 'Terminé de lire clients';
-    });
-
-    ///////////////////////
-    // RDV
-
-    setState(() {
-      _message = 'Lecture de RDV...';
-    });
-
+    _log('Lecture de RDV...');
     int rdvCount = 0;
-
     const validServices = {
       "Régulier",
       "Trait d'union",
       "Livraison",
       "Dépannage d'urgence",
     };
-
     await for (final row in SpreadsheetService.read(FileTypeExcel.rdv)) {
       final statut = row["Statut"];
       final service = row["Service"];
@@ -151,59 +273,21 @@ class _MyHomePageState extends State<MyHomePage> {
       if ((statut != null && statut != "Absent") &&
           validServices.contains(service)) {
         final clientIdInt = int.tryParse(clientId);
-        if (clientIdInt != null) {
-          if (!clients.containsKey(clientIdInt)) {
-            print('Client introuvable : $clientIdInt}');
-            continue;
-          }
-          rdvs.putIfAbsent(clientIdInt, () => []).add(RDV.fromMap(row));
+        if (clientIdInt != null && _clients.containsKey(clientIdInt)) {
+          _rdvs.putIfAbsent(clientIdInt, () => []).add(RDV.fromMap(row));
           rdvCount++;
         }
       }
     }
+    _log('RDV lus: $rdvCount');
 
-    setState(() {
-      _message = 'Terminé de lire RDV';
-    });
-
-    // // Print RDV
-    // for (final entry in rdvs.entries) {
-    //   final clientId = entry.key;
-    //   final household = clients[clientId];
-    //   final label = household != null
-    //       ? 'Household ${household.id}'
-    //       : 'Client inconnu ($clientId)';
-
-    //   print('┌─ $label — ${entry.value.length} RDV');
-    //   for (final rdv in entry.value) {
-    //     final serial = int.tryParse(rdv.date.toString());
-    //     final date = serial != null
-    //         ? DateTime(1899, 12, 30).add(Duration(days: serial))
-    //         : null;
-    //     final dateStr = date != null
-    //         ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
-    //         : rdv.date.toString();
-
-    //     print('│   • $dateStr  ${rdv.service}');
-    //   }
-    //   print('└─────────────────────────────────');
-    // }
-
-    ///////////////////////
-    // Famille
-
-    setState(() {
-      _message = 'Lecture de famille...';
-    });
-
+    _log('Lecture de famille...');
     await for (final row in SpreadsheetService.read(FileTypeExcel.famille)) {
-      final clientId = parseClientId(row["N° de client"]);
+      final clientId = _parseClientId(row["N° de client"]);
       if (clientId == null) continue;
-      if (!rdvs.containsKey(clientId)) continue;
-
-      final household = clients[clientId];
+      if (!_rdvs.containsKey(clientId)) continue;
+      final household = _clients[clientId];
       if (household == null) continue;
-
       household.persons.add(
         Person.fromMap(
           row,
@@ -212,154 +296,182 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       );
     }
-
-    setState(() {
-      _message = 'Terminé de lire famille';
-    });
-
-    // // Print all families
-    // for (final clientId in rdvs.keys) {
-    //   final household = clients[clientId];
-    //   if (household == null) continue;
-
-    //   print(
-    //     '┌─ Household ${household.id} — ${household.persons.length} personnes',
-    //   );
-    //   for (final person in household.persons) {
-    //     final dobStr = person.dateOfBirth != null
-    //         ? '${person.dateOfBirth!.year}-${person.dateOfBirth!.month.toString().padLeft(2, '0')}-${person.dateOfBirth!.day.toString().padLeft(2, '0')}'
-    //         : 'DoB inconnue';
-    //     print('│   • ${person.id}  $dobStr');
-    //   }
-    //   print('└─────────────────────────────────');
-    // }
-
-    setState(() {
-      _message = 'Terminé : ($rdvCount)';
-    });
+    _log('Famille lue. Clients avec RDV: ${_rdvs.length}');
   }
 
   Future<void> _send() async {
+    _log('Envoi des distributions...');
     await ArkipelService.sendDistributions(
-      rdvs, 
-      clients, 
-      // limit: 1
-      );
-    setState(() {
-      _message = ArkipelService.arkipelResponse;
-    });
+      _rdvs,
+      _clients,
+      onProgress: _log,
+    );
   }
 
-  Future<void> _delete() async {
-    await ArkipelService.deleteAllTestData(clients, rdvs);
-    setState(() {
-      _message = 'Suppression terminée';
-    });
-  }
-
-  int? parseClientId(dynamic value) {
+  int? _parseClientId(dynamic value) {
     if (value == null) return null;
-
     if (value is int) return value;
-
-    if (value is String) {
-      return int.tryParse(value);
-    }
-
+    if (value is String) return int.tryParse(value);
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    final theme = Theme.of(context);
+    final blue = Colors.lightBlue[200]!;
+
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
+        backgroundColor: theme.colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: <Widget>[
-            Text(_message, style: Theme.of(context).textTheme.headlineMedium),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ConfigRow(
+              label: 'Jeton d\'accès',
+              controller: _tokenController,
+              obscure: true,
+              onSelect: () => _selectFromList('tokens', _tokenController),
+              onAdd: () => _addToList('tokens', _tokenController),
+              onDelete: () => _deleteFromList('tokens'),
+            ),
+            const SizedBox(height: 8),
+            _ConfigRow(
+              label: 'Destination',
+              controller: _destinationController,
+              onSelect: () => _selectFromList('destinations', _destinationController),
+              onAdd: () => _addToList('destinations', _destinationController),
+              onDelete: () => _deleteFromList('destinations'),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                OutlinedButton(onPressed: _ping, child: const Text('Tester la connexion')),
+                const SizedBox(width: 8),
+                Icon(
+                  _pingOk == null
+                      ? Icons.circle_outlined
+                      : _pingOk!
+                      ? Icons.check_circle
+                      : Icons.cancel,
+                  color: _pingOk == null
+                      ? Colors.grey
+                      : _pingOk!
+                      ? Colors.green
+                      : Colors.red,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                if (_lastPingTime != null)
+                  Text(
+                    '${_lastPingTime!.hour.toString().padLeft(2, '0')}:'
+                    '${_lastPingTime!.minute.toString().padLeft(2, '0')}:'
+                    '${_lastPingTime!.second.toString().padLeft(2, '0')}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                OutlinedButton(
+                  onPressed: _pickFiles,
+                  child: const Text('Choisir les fichiers'),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Débit : ${ArkipelService.sendRateLabel}',
+                  child: OutlinedButton(
+                    onPressed: _doMagic,
+                    child: const Text('Envoyer'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              color: blue,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+              child: const Text(
+                'Messages',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Expanded(
+              child: Container(
+                color: Colors.lightBlue[50],
+                padding: const EdgeInsets.all(8),
+                child: ListView.builder(
+                  itemCount: _messages.length,
+                  itemBuilder: (_, i) => Text(
+                    _messages[i],
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
-      floatingActionButton: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          FloatingActionButton(
-            onPressed: _ping,
-            tooltip: 'Ping',
-            child: const Text('Ping'),
+    );
+  }
+}
+
+class _ConfigRow extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final bool obscure;
+  final VoidCallback onSelect;
+  final VoidCallback onAdd;
+  final VoidCallback onDelete;
+
+  const _ConfigRow({
+    required this.label,
+    required this.controller,
+    this.obscure = false,
+    required this.onSelect,
+    required this.onAdd,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(label, style: const TextStyle(fontSize: 15)),
+        ),
+        Expanded(
+          child: TextField(
+            controller: controller,
+            obscureText: obscure,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
           ),
-          const SizedBox(width: 8),
-          FloatingActionButton(
-            onPressed: () {
-              setState(() {
-                _message = 'No message yet';
-              });
-            },
-            tooltip: 'Clear message',
-            child: const Text('Clear'),
-          ),
-          FloatingActionButton(
-            onPressed: _pickFileRDV,
-            tooltip: 'Pick file "RDV"',
-            child: const Text('Pick file "RDV"'),
-          ),
-          FloatingActionButton(
-            onPressed: _pickFileClients,
-            tooltip: 'Pick file "Clients"',
-            child: const Text('Pick file "Clients"'),
-          ),
-          FloatingActionButton(
-            onPressed: _pickFileFamille,
-            tooltip: 'Pick file "Famille"',
-            child: const Text('Pick file "Famille"'),
-          ),
-          FloatingActionButton(
-            onPressed: _read,
-            tooltip: 'Read',
-            child: const Text('Read'),
-          ),
-          FloatingActionButton(
-            onPressed: _send,
-            tooltip: 'Send',
-            child: const Text('Send'),
-          ),
-          FloatingActionButton(
-            onPressed: _delete,
-            tooltip: 'Delete',
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.list),
+          tooltip: 'Sélectionner dans la liste',
+          onPressed: onSelect,
+        ),
+        IconButton(
+          icon: const Icon(Icons.playlist_add),
+          tooltip: 'Ajouter à la liste',
+          onPressed: onAdd,
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline),
+          tooltip: 'Supprimer de la liste',
+          onPressed: onDelete,
+        ),
+      ],
     );
   }
 }

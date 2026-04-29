@@ -1,53 +1,73 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:pont_arkipel/model/household.dart';
 import 'package:pont_arkipel/model/rdv.dart';
 
 class ArkipelService {
-  static final Uri endpoint = Uri.parse(
-    "https://gotoucan.app/arkipel/b3y674i4k159y7hs6px6ju8idat1rggdn1ssb5nzc4h6krthrrah/streams",
-  );
+  static String? _customToken;
+  static Uri? _customEndpoint;
+
+  static void setToken(String token) => _customToken = token.trim();
+  static void setEndpoint(String value) {
+    final s = value.trim();
+    if (s.isEmpty) {
+      _customEndpoint = null;
+      return;
+    }
+    final atIndex = s.indexOf('@');
+    if (atIndex > 0) {
+      final key = s.substring(0, atIndex);
+      final domain = s.substring(atIndex + 1);
+      _customEndpoint = Uri.parse('https://$domain/arkipel/$key/streams');
+    } else {
+      _customEndpoint = Uri.parse(s);
+    }
+  }
+
+  static Uri get endpoint {
+    if (_customEndpoint == null) throw Exception('Aucune destination saisie');
+    return _customEndpoint!;
+  }
 
   static String arkipelResponse = "No data yet";
 
+  /// Throws a descriptive [Exception] on failure, returns normally on success.
   static Future<void> ping() async {
-    print("Sending request...");
-
     final token = await _readToken();
-    print(
-      "Token: '${token.substring(0, 10)}...'",
-    ); // verify token starts correctly
-    print("Endpoint: $endpoint"); // verify URL
 
-    var payload = {
-      "payload": {"type": "ping"},
-      "source_public_key": "",
-    };
+    final response = await http.post(
+      endpoint,
+      headers: {
+        "Authorization": "Bearer $token",
+        "Content-Type": "application/json",
+      },
+      body: jsonEncode({
+        "payload": {"type": "ping"},
+        "source_public_key": "",
+      }),
+    );
 
+    final Map<String, dynamic> decoded;
     try {
-      final response = await http.post(
-        endpoint,
-        headers: {
-          "Authorization": "Bearer $token",
-          "Content-Type": "application/json",
-        },
-        body: jsonEncode(payload),
-      );
-
-      print("Status: ${response.statusCode}");
-      print("Body: ${response.body.substring(0, 100)}");
-
-      var decoded = jsonDecode(response.body);
-      var pretty = const JsonEncoder.withIndent('  ').convert(decoded);
-
-      print("\nResponse:");
-      print(pretty);
-
-      arkipelResponse = pretty;
-    } catch (e) {
-      print("Error: $e");
+      decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw Exception('Adresse de destination incorrecte');
     }
+
+    if (decoded.containsKey('error')) {
+      throw Exception('Token refusé par le serveur');
+    }
+
+    final type = decoded['payload']?['type'];
+    if (type != 'pong') {
+      throw Exception('Adresse de destination incorrecte');
+    }
+  }
+
+  static String _padId(String id) {
+    final parts = id.split('-');
+    parts[0] = parts[0].padLeft(4, '0');
+    return parts.join('-');
   }
 
   static const Map<String, int> _templateIds = {
@@ -57,16 +77,20 @@ class ArkipelService {
     "Dépannage d'urgence": 515887,
   };
 
+  static const int _sendDelayMs = 650;
+  static String get sendRateLabel =>
+      '~${(60000 / _sendDelayMs).round()} distributions/min';
+
   static Future<void> sendDistributions(
     Map<int, List<RDV>> rdvs,
     Map<int, Household> clients, {
     int? limit,
+    void Function(String)? onProgress,
   }) async {
-    String tokenPath = r"C:\Users\maxim\Desktop\ArkipelToken.txt";
-    String token = await File(tokenPath).readAsString();
+    final token = await _readToken();
 
     final entries = limit != null ? rdvs.entries.take(limit) : rdvs.entries;
-
+    final total = entries.fold<int>(0, (sum, e) => sum + e.value.length);
     int sent = 0;
 
     for (final entry in entries) {
@@ -74,14 +98,10 @@ class ArkipelService {
       final household = clients[clientId];
       if (household == null) continue;
 
-      print('Sending client $clientId with ${entry.value.length} RDVs'); // 👈
-
-      print('Client number: ${household.id}');
-
       for (final rdv in entry.value) {
         final templateId = _templateIds[rdv.service];
         if (templateId == null) {
-          print('Template inconnu pour service: ${rdv.service}');
+          onProgress?.call('Service inconnu ignoré : ${rdv.service} (client $clientId)');
           continue;
         }
 
@@ -96,14 +116,14 @@ class ArkipelService {
           "quantity": 1,
           "buyer": {
             "type": "households:upsert",
-            "name": '${household.id}',
-            "import_id": '${household.id}',
+            "name": _padId(household.id),
+            "import_id": _padId(household.id),
             "people": household.persons
                 .map(
                   (person) => {
                     "type": "people:upsert",
-                    "first_name": person.id,
-                    "import_id": person.id,
+                    "first_name": _padId(person.id),
+                    "import_id": _padId(person.id),
                     "category_id": 127,
                     "dob": person.dateOfBirth != null
                         ? '${person.dateOfBirth!.year}-${person.dateOfBirth!.month.toString().padLeft(2, '0')}-${person.dateOfBirth!.day.toString().padLeft(2, '0')}'
@@ -127,25 +147,21 @@ class ArkipelService {
           final decoded = jsonDecode(response.body);
           final messageId = decoded['payload']['message_id'];
           sent++;
-          print(
-            'Distribution envoyée — message_id: $messageId ($procuredOn ${rdv.service} → client $clientId)',
-          );
+          onProgress?.call('[$sent/$total] Client ${_padId(household.id)} — $procuredOn (${rdv.service}) ✓ #$messageId');
         } catch (e) {
-          print('Erreur envoi distribution client $clientId: $e');
+          onProgress?.call('Erreur client $clientId : $e');
         }
 
-        // Pause pour API
-        await Future.delayed(const Duration(milliseconds: 650));
+        await Future.delayed(const Duration(milliseconds: _sendDelayMs));
       }
     }
 
-    print('✅ $sent distributions envoyées');
+    onProgress?.call('Terminé : $sent/$total distributions envoyées');
   }
 
   static Future<String> _readToken() async {
-    return (await File(
-      r"C:\Users\maxim\Desktop\ArkipelToken.txt",
-    ).readAsString()).trim();
+    if (_customToken == null || _customToken!.isEmpty) throw Exception('Aucun token saisi');
+    return _customToken!;
   }
 
   static Future<void> deleteAllTestData(
@@ -153,7 +169,7 @@ class ArkipelService {
     Map<int, List<RDV>> rdvs,
   ) async {
     final token = await _readToken();
-    final clientIds = rdvs.keys.map((id) => id.toString()).toSet();
+    final clientIds = rdvs.keys.map((id) => _padId(id.toString())).toSet();
 
     print('ClientIds to delete: $clientIds');
 
