@@ -3,12 +3,18 @@ class Person {
   final int memberIndex;
   final DateTime? dateOfBirth;
   final bool? femme;
+  final bool etudiant;
+  final bool nouvelArrivant;
+  final bool autochtone;
 
   Person({
     required this.householdId,
     required this.memberIndex,
     required this.dateOfBirth,
     required this.femme,
+    this.etudiant = false,
+    this.nouvelArrivant = false,
+    this.autochtone = false,
   });
 
   String get id => memberIndex == 0
@@ -31,11 +37,22 @@ class Person {
         ? DateTime(1899, 12, 30).add(Duration(days: serial))
         : null;
 
+    bool parseBool(dynamic v) {
+      if (v == null) return false;
+      if (v is bool) return v;
+      if (v is int) return v != 0;
+      final s = v.toString().trim();
+      return s == '1' || s.toLowerCase() == 'true';
+    }
+
     return Person(
       householdId: householdId,
       memberIndex: memberIndex,
       dateOfBirth: dob,
       femme: map["Sexe"]?.toString() == "Femme",
+      etudiant: parseBool(map["Étudiant"]),
+      nouvelArrivant: parseBool(map["Immigrant"]),
+      autochtone: parseBool(map["Premières Nations"]),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:pont_arkipel/model/household.dart';
 import 'package:pont_arkipel/model/rdv.dart';
+import 'package:pont_arkipel/services/form_mappings.dart';
 
 class ArkipelService {
   static String? _customToken;
@@ -109,6 +110,15 @@ class ArkipelService {
         final procuredOn =
             '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
+        final householdSurveyResponse = {
+          if (FormMappings.sourceRevenu(household.sourceRevenu) != null)
+            'source-revenu': FormMappings.sourceRevenu(household.sourceRevenu),
+          if (FormMappings.raisonRecours(household.raison) != null)
+            'raison-recours': FormMappings.raisonRecours(household.raison),
+          if (FormMappings.habitation(household.habitation) != null)
+            'habitation': FormMappings.habitation(household.habitation),
+        };
+
         final payload = {
           "type": "distributions:upsert",
           "template_id": templateId,
@@ -118,6 +128,11 @@ class ArkipelService {
             "type": "households:upsert",
             "name": _padId(household.id),
             "import_id": _padId(household.id),
+            "category_id": FormMappings.typeMenageCategoryId(household.typeMenage),
+            if (householdSurveyResponse.isNotEmpty)
+              "forms": [
+                {"id": 443, "data": householdSurveyResponse}
+              ],
             "people": household.persons
                 .map(
                   (person) => {
@@ -128,6 +143,18 @@ class ArkipelService {
                     "dob": person.dateOfBirth != null
                         ? '${person.dateOfBirth!.year}-${person.dateOfBirth!.month.toString().padLeft(2, '0')}-${person.dateOfBirth!.day.toString().padLeft(2, '0')}'
                         : null,
+                    "forms": [
+                      {
+                        "id": 435,
+                        "data": {
+                          "groupeDage": person.groupeDage,
+                          if (person.femme != null) "femme": person.femme,
+                          "etudiant": person.etudiant,
+                          "nouvel_arrivant": person.nouvelArrivant,
+                          "autochtone": person.autochtone,
+                        },
+                      }
+                    ],
                   },
                 )
                 .toList(),

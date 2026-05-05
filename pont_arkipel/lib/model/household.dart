@@ -2,6 +2,7 @@ import 'package:pont_arkipel/model/person.dart';
 
 class Household {
   final String id;
+  final String? typeMenage;
   final String? sourceRevenu;
   final String? raison;
   final String? habitation;
@@ -9,6 +10,7 @@ class Household {
 
   Household({
     required this.id,
+    required this.typeMenage,
     required this.sourceRevenu,
     required this.raison,
     required this.habitation,
@@ -18,9 +20,10 @@ class Household {
   factory Household.fromMap(Map<String, dynamic> map) {
     return Household(
       id: map["N° de client"],
-      sourceRevenu: map["Source de revenu"],
-      raison: map["Raison"],
-      habitation: map["Logement"],
+      typeMenage: map["Type de ménage autre"]?.toString(),
+      sourceRevenu: map["Source de revenu"]?.toString(),
+      raison: map["Raison"]?.toString(),
+      habitation: map["Logement"]?.toString(),
       persons: [],
     );
   }

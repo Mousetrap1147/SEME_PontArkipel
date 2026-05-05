@@ -163,6 +163,7 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  bool _isBusy = false;
   bool? _pingOk;
   DateTime? _lastPingTime;
   final List<String> _messages = [];
@@ -181,6 +182,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _ping() async {
+    setState(() => _isBusy = true);
     _log('Envoi ping...');
     try {
       await ArkipelService.ping();
@@ -195,6 +197,8 @@ class _MyHomePageState extends State<MyHomePage> {
         _lastPingTime = DateTime.now();
       });
       _log('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      setState(() => _isBusy = false);
     }
   }
 
@@ -307,6 +311,7 @@ class _MyHomePageState extends State<MyHomePage> {
       _deleteTo = to;
     });
 
+    setState(() => _isBusy = true);
     try {
       await ArkipelService.deleteDistributions(
         createdAtGteq: _formatDate(_deleteFrom!),
@@ -315,6 +320,8 @@ class _MyHomePageState extends State<MyHomePage> {
       );
     } catch (e) {
       _log('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      setState(() => _isBusy = false);
     }
   }
 
@@ -322,8 +329,13 @@ class _MyHomePageState extends State<MyHomePage> {
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Future<void> _doMagic() async {
-    await _read();
-    await _send();
+    setState(() => _isBusy = true);
+    try {
+      await _read();
+      await _send();
+    } finally {
+      setState(() => _isBusy = false);
+    }
   }
 
   Future<void> _read() async {
@@ -419,6 +431,7 @@ class _MyHomePageState extends State<MyHomePage> {
               label: 'Jeton d\'accès',
               controller: _tokenController,
               obscure: true,
+              readOnly: _isBusy,
               onSelect: () => _selectFromList('tokens', _tokenController),
               onAdd: () => _addToList('tokens', _tokenController),
               onDelete: () => _deleteFromList('tokens'),
@@ -427,6 +440,7 @@ class _MyHomePageState extends State<MyHomePage> {
             _ConfigRow(
               label: 'Destination',
               controller: _destinationController,
+              readOnly: _isBusy,
               onSelect: () => _selectFromList('destinations', _destinationController),
               onAdd: () => _addToList('destinations', _destinationController),
               onDelete: () => _deleteFromList('destinations'),
@@ -526,6 +540,7 @@ class _ConfigRow extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final bool obscure;
+  final bool readOnly;
   final VoidCallback onSelect;
   final VoidCallback onAdd;
   final VoidCallback onDelete;
@@ -534,6 +549,7 @@ class _ConfigRow extends StatelessWidget {
     required this.label,
     required this.controller,
     this.obscure = false,
+    this.readOnly = false,
     required this.onSelect,
     required this.onAdd,
     required this.onDelete,
@@ -551,6 +567,7 @@ class _ConfigRow extends StatelessWidget {
           child: TextField(
             controller: controller,
             obscureText: obscure,
+            readOnly: readOnly,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               isDense: true,
