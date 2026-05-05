@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:devkit.arkipel.co)",
-      "Bash(curl -s \"https://devkit.arkipel.co/specs/mutations/distributions-upsert.html\")"
-    ]
-  }
-}
